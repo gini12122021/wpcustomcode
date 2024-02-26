@@ -1,0 +1,161 @@
+<?php
+
+/* code to add featured post option to the default post type */
+
+function add_featured_meta_box()
+{
+    add_meta_box(
+        'featured-meta-box',
+        'Featured Post',
+        'featured_meta_box_callback',
+        'post',
+        'side',
+        'default'
+    );
+}
+add_action('add_meta_boxes', 'add_featured_meta_box');
+
+function featured_meta_box_callback($post)
+{
+    $featured = get_post_meta($post->ID, '_featured_post', true);
+?>
+    <label for="featured-post">
+        <input type="checkbox" name="featured-post" id="featured-post" <?php checked($featured, 'on'); ?> />
+        Mark this post as featured
+    </label>
+<?php
+}
+
+function save_featured_post_meta($post_id)
+{
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE)
+        return $post_id;
+
+    if (isset($_POST['featured-post'])) {
+        update_post_meta($post_id, '_featured_post', 'on');
+    } else {
+        delete_post_meta($post_id, '_featured_post');
+    }
+}
+add_action('save_post', 'save_featured_post_meta');
+
+// Add custom column to post listing
+function add_featured_column($columns)
+{
+    $columns['featured_post'] = 'Featured Post';
+    return $columns;
+}
+add_filter('manage_posts_columns', 'add_featured_column');
+
+// Populate the custom column with the editable featured post status
+function display_featured_column($column, $post_id)
+{
+    if ($column === 'featured_post') {
+        $featured = get_post_meta($post_id, '_featured_post', true);
+        $star_icon = ($featured === 'on') ? 'fas fa-star' : 'far fa-star';
+
+        echo '<span class="featured-star ' . esc_attr($star_icon) . '" data-post-id="' . esc_attr($post_id) . '"></span>';
+    }
+}
+add_action('manage_posts_custom_column', 'display_featured_column', 10, 2);
+
+// Add JavaScript to handle the star icon click event and update post meta
+function featured_column_js()
+{
+?>
+    <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('.featured-star').on('click', function() {
+                var post_id = $(this).data('post-id');
+                var featured = $(this).hasClass('fas fa-star') ? 'off' : 'on';
+
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'update_featured_status',
+                        post_id: post_id,
+                        featured: featured,
+                    },
+                    success: function(response) {
+                        location.reload();
+                    }
+                });
+            });
+        });
+    </script>
+<?php
+}
+add_action('admin_footer', 'featured_column_js');
+
+// Ajax handler to update post meta when star icon is clicked
+function update_featured_status()
+{
+    $post_id = $_POST['post_id'];
+    $featured = $_POST['featured'];
+
+    // For Multiple Featured Post  
+    /*
+            if ($featured === 'on') {
+                update_post_meta($post_id, '_featured_post', 'on');
+            } else {
+                delete_post_meta($post_id, '_featured_post');
+            }
+        */
+
+    // For Single Featured Post 
+    if ($featured === 'on') {
+        // Remove featured status from all posts
+        $args = array(
+            'post_type' => 'post',
+            'meta_key' => '_featured_post',
+        );
+
+        $featured_posts = get_posts($args);
+
+        foreach ($featured_posts as $post) {
+            delete_post_meta($post->ID, '_featured_post');
+        }
+
+        // Set the selected post as featured
+        update_post_meta($post_id, '_featured_post', 'on');
+    } else {
+        // Remove featured status from the selected post
+        delete_post_meta($post_id, '_featured_post');
+    }
+
+    die();
+}
+add_action('wp_ajax_update_featured_status', 'update_featured_status');
+
+
+function enqueue_font_awesome()
+{
+    wp_enqueue_style('font-awesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
+}
+add_action('admin_enqueue_scripts', 'enqueue_font_awesome');
+
+    // Code to Show the fetaured post //
+    /*
+        $args = array(
+            'post_type' => 'post',  /*post Type Name*/
+            'meta_query' => array(
+                array(
+                    'key' => '_featured_post',
+                    'value' => 'on',
+                ),
+            ),
+        );
+        $featured_posts = new WP_Query($args);
+        if ($featured_posts->have_posts()) {
+            while ($featured_posts->have_posts()) {
+                $featured_posts->the_post();
+                // Display featured post content here
+            }
+            wp_reset_postdata();
+        } else {
+            // No featured posts found
+        }
+    */
+
+/* code to add featured post option to the default post type */
