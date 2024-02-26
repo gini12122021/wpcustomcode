@@ -1,0 +1,94 @@
+<?php
+add_action('wp_ajax_update_product_thubnail_for_post', 'update_product_thubnail_for_post');
+add_action('wp_ajax_nopriv_update_product_thubnail_for_post', 'update_product_thubnail_for_post'); // Allow for non-logged-in users
+function update_product_thubnail_for_post()
+{
+
+    $postId = sanitize_text_field($_POST['postId']);
+    $metaKey = 'file-upload';
+    $meta_value = get_post_meta($postId, $metaKey, true);
+
+    $mediaId = $meta_value[0];
+    $mediaUrl = wp_get_attachment_url($mediaId);
+
+    // product_item_thumbnail_id  >> meta key
+    // product_item_thumbnail >> meta key
+    $response['id'] = $mediaId;
+    $response['url'] = $mediaUrl;
+
+    update_post_meta($postId, 'product_item_thumbnail_id', $mediaId);
+    update_post_meta($postId, 'product_item_thumbnail', $mediaUrl);
+
+    wp_die();
+}
+
+add_action('wp_footer', 'fessubmitclick');
+function fessubmitclick()
+{
+?>
+    <script>
+          jQuery.ajax({
+                            type: "POST",
+                            url: ajax_object.ajax_url,
+                            data: {
+                                action: "update_product_thubnail_for_post",
+                                postId: postId
+                            },
+                            success: function(response) {
+                                if (response) {
+                                    //alert(postId);
+                                    //alert(response.id);
+                                    //alert(response.url);
+
+                                } else {
+                                    // error
+                                }
+                            },
+                        });
+
+function productActionsCommon() {
+            jQuery(document).on("ajaxComplete", function(event, xhr, settings) {
+                let responseData = xhr.responseJSON;
+
+                if (responseData) {
+                    console.log(responseData);
+                }
+                if (responseData.success) {
+                    var urlParams = new URLSearchParams(responseData.redirect_to);
+
+                    // Get the post_id parameter value
+                    var postId = urlParams.get('post_id');
+
+                    // url: ajax_object.ajax_url,
+                    if (typeof postId !== 'undefined' && postId !== null && postId !== '') {
+                        jQuery.ajax({
+                            type: "POST",
+                            url: ajax_object.ajax_url,
+                            data: {
+                                action: "update_product_thubnail_for_post",
+                                postId: postId
+                            },
+                            success: function(response) {
+                                if (response) {
+                                    //alert(postId);
+                                    //alert(response.id);
+                                    //alert(response.url);
+
+                                } else {
+                                    // error
+                                }
+                            },
+                        });
+                    }
+                }
+            });
+        }
+
+
+        jQuery('#fes-submit').click(function() {
+            // edit product id
+            productActionsCommon();
+        });
+   </script>
+<?php
+}
