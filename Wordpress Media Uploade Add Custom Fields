@@ -1,0 +1,25 @@
+
+<?php
+/* Add Custom Image Link field to media uploader for WGL Gallery module */
+function attachment_custom_link_field($form_fields, $post)
+{
+    $form_fields['custom_image_link'] = array(
+        'label' => esc_html__('Custom Image Link','bighearts'),
+        'input' => 'text',
+        'value' => get_post_meta($post->ID, 'custom_image_link', true),
+        'helps' => esc_html__('This option works only for the WGL Gallery module.','bighearts'),
+    );
+    return $form_fields;
+}
+add_filter('attachment_fields_to_edit', 'attachment_custom_link_field', 10, 2);
+/* Save values of Custom Image Link in media uploader */
+function attachment_custom_link_field_save($post, $attachment)
+{
+    if (isset($attachment['custom_image_link']))
+        update_post_meta($post['ID'], 'custom_image_link', $attachment['custom_image_link']);
+
+    return $post;
+}
+
+add_filter('attachment_fields_to_save', 'attachment_custom_link_field_save', 10, 2);
+?>
