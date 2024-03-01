@@ -1,0 +1,664 @@
+<?php 
+/**
+ * [URGENT] Integration between WC and HubSpot deals for Sales Data
+ * 
+ * 27-03-2023
+ * 
+ * Create a Hubspot deal after a WooCommerce order is placed.
+ */
+function get_hs_dealstage_code_by_order_status($status = 'processing'){
+	$order_status_map = [
+		'pending' => '66333035',
+		'processing' => '66333036',
+		'on-hold' => '66333037',
+		'cancelled' => '66333039',
+		'refunded' => '66333040',
+		'failed' => '66333041',
+		'checkout-draft' => '66333053',
+		'completed' => '66333038',
+		'bl' => '66333042',
+		'bl-pending' => '66333043',
+		'bl-sending' => '66333044',
+		'bl-shipped' => '66333045',
+		'bl-received' => '66333046',
+		'bl-returned' => '66333047',
+		'bl-damaged' => '66333049',
+		'bl-lost' => '66333051',
+		'bl-stolen' => '66333052',
+		'bl-instantpurc' => '66333050',
+		'bl-purchased' => '66333048'	
+	];
+	return array_key_exists($status, $order_status_map) ? $order_status_map[$status] : $status;
+}
+
+
+function create_hubspot_deal_on_order_placed( $order_id ) {
+     // Some Environment based variable
+     if (ENVIRONMENT === 'STAGING' || ENVIRONMENT === 'DEVELOPMENT') {
+          $dealstage = 'deal_stage_staging';
+     } else {
+          $dealstage = 'dealstage';
+     }
+ 
+
+     // Get the WooCommerce order data
+	$order = wc_get_order( $order_id );
+
+     // Check if the order is a subscription renewal order or a subscription parent order
+     if (  get_post_type( $order_id ) == 'shop_subscription') {
+          
+          return true;
+     }else{
+         
+          // Hubspot Deals API endpoint for creating new deals
+          $deals_endpoint = 'https://api.hubapi.com/deals/v1/deal';
+
+          // Set the deal properties
+          $deal_properties = array(
+               array( 'name' => 'dealname', 'value' => 'Order #'.$order->get_order_number() ),
+               array( 'name' => 'amount', 'value' => $order->get_total() ),
+               array( 'name' => 'orderID', 'value' => $order->get_id() ),
+               array( 'name' => 'pipeline', 'value' => 'default' ),
+               array( 'name' => $dealstage, 'value' => get_hs_dealstage_code_by_order_status($order->get_status()) ),
+               //array( 'name' => 'hubspot_owner_id', 'value' => 75647313 ), //2711251
+          );
+          
+          // Create the deal payload
+          $deal_payload = array(
+               'properties' => $deal_properties,
+               // 'associations' => $deal_associations,
+          );
+
+          $user_ids = array(1031); // Test fabio user ID : fesobobm@gmail.com
+          $order_user_id = $order->get_user_id();
+          if ($order_user_id == 1031 ) { // Test fabio user ID: fesobobm@gmail.com
+               // $order->add_order_note( __("1. Order Status is: ".$order->get_status()."(".get_hs_dealstage_code_by_order_status($order->get_status()).")") );
+          }
+          
+          // Send the POST request to the Hubspot Deals API endpoint
+          $response = wp_remote_post( $deals_endpoint, array(
+               'body' => json_encode( $deal_payload ),
+               'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+          ) );
+
+          // Check for errors
+          if ( is_wp_error( $response ) ) {
+               error_log( 'Failed to create Hubspot deal. Error: ' . $response->get_error_message() );
+          } else {
+               $response_body = json_decode( wp_remote_retrieve_body( $response ), true );
+               if ( isset( $response_body['dealId'] ) ) {
+
+                    $hubspot_deal_id1 = $response_body['dealId'];
+
+                    update_post_meta( $order_id, '_hubspot_deal_id4', $response_body['dealId'] );
+                    
+                    $_hs_customer_id = get_post_meta($order_id,'_hs_customer_id4',true);
+
+                    if( !$_hs_customer_id ){
+                         $user_info = get_userdata($order->get_user_id());
+                         if(!empty($user_info)){
+                              $contact_endpoint = 'https://api.hubapi.com/contacts/v1/contact/email/'.$user_info->user_email.'/profile';
+                              $contact_response = wp_remote_get( $contact_endpoint, array(
+                                   'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                              ) );
+                                   
+                              if ( is_wp_error( $contact_response ) ) {
+                                   error_log( 'Failed to update Hubspot deal. Error: ' . $contact_response->get_error_message() );
+                              } else {		
+                                   $contact_response_body = json_decode( wp_remote_retrieve_body( $contact_response ), true );
+                                   // Send the PUT request to the Hubspot Deals API endpoint
+                                   $response = wp_remote_request( 'https://api.hubapi.com/crm-associations/v1/associations',
+                                        array(
+                                             'method'  => 'PUT',
+                                             'body' => '{
+                                                  "fromObjectId": '.$contact_response_body['vid'].',
+                                                  "toObjectId": '.$hubspot_deal_id1.',
+                                                  "category": "HUBSPOT_DEFINED",
+                                                  "definitionId": 4
+                                             }', 
+                                             'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                                        )
+                                   );
+                                   // Check for errors
+                                   if ( is_wp_error( $response ) ) {
+                                        error_log( 'Failed to updated Hubspot deal. Error: ' . $response->get_error_message() );
+                                   } else {
+                                        update_post_meta( $order_id, '_hs_customer_id4', $contact_response_body['vid'] );
+                                        error_log( 'Hubspot deal updated successfully. Added customer_id.' );
+                                   }
+                              }
+                         }
+                    }
+                    $_hubspot_line_item_added = get_post_meta($order_id,'_hubspot_line_item_added4',true);
+                    if(!empty($order->get_items()) && !$_hubspot_line_item_added) {
+                         foreach ( $order->get_items() as $item_id => $item_values ) {
+                              
+                              $hs_line_item = wc_get_order_item_meta( $item_id, '_hs_line_item4', true );
+                              if( !$hs_line_item ){
+                                   // Product_id
+                                   $product_id = $item_values->get_product_id(); 
+                                   $item_quantity  = $item_values->get_quantity();
+                                   $item_total     = $item_values->get_total();
+                                   $product = wc_get_product( $product_id );
+          
+                                   //read first
+                                   $product_get_endpoint = "https://api.hubapi.com/crm/v3/objects/products/batch/read?archived=false";
+                                   // Set the deal properties
+                                   $product_get_payload = array(
+                                        'properties' => array("productid",	"hs_sku"),
+                                        "idProperty" => "hs_sku",
+                                        "inputs" => array(
+                                             array(
+                                                  "id" => $product->get_sku()
+                                             )
+                                        ),
+                                   );
+                                   // Send the POST request to the Hubspot Deals API endpoint
+                                   $product_get_response = wp_remote_post( $product_get_endpoint, array(
+                                        'body' => json_encode( $product_get_payload ),
+                                        'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                                   ) );
+          
+                                   if ( is_wp_error( $product_get_response ) ) {
+                                        error_log( 'Failed to read Hubspot product. Error: ' . $product_get_response->get_error_message() );
+                                   } else {
+                                        $product_get_response_body = json_decode( wp_remote_retrieve_body( $product_get_response ), true );
+                                        if ( isset( $product_get_response_body['results'] ) && !empty( $product_get_response_body['results'] ) ) {	
+                                             $hs_id = $product_get_response_body['results'][0]['id'];
+                                             $product_item_response = wp_remote_request( 'https://api.hubapi.com/crm/v3/objects/line_item',
+                                                  array(
+                                                       'method'  => 'POST',
+                                                       'body' => '{
+                                                            "properties": {
+                                                            "hs_product_id" : '.$hs_id.',
+                                                            "quantity": '.$item_quantity.',
+                                                            "price": '.$item_total.'
+                                                            },
+                                                            "associations": [
+                                                            {
+                                                            "to": {
+                                                                 "id": '.$hubspot_deal_id1.'
+                                                            },
+                                                            "types": [
+                                                                 {
+                                                                 "associationCategory": "HUBSPOT_DEFINED",
+                                                                 "associationTypeId": 20
+                                                                 }
+                                                            ]
+                                                            }
+                                                            ]
+                                                       }',
+                                                       'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                                                  )
+                                             );
+                                             if ( !is_wp_error( $product_get_response ) ) {
+                                                  $product_item_response_body = json_decode( wp_remote_retrieve_body( $product_item_response ), true );
+                                                  wc_update_order_item_meta($item_id, '_hs_line_item4', $product_item_response_body['id'] );
+                                                  update_post_meta($order_id,'_hubspot_line_item_added4',$product_item_response_body['id']);
+                                             }
+                                        }
+                                   }
+                              }
+                         }
+                    }
+                    error_log( 'Hubspot deal created successfully. Deal ID: ' . $response_body['dealId'] );
+                    error_log( 'Hubspot deal created successfully. Order ID: ' . $order_id );
+               } else {
+                    error_log( 'Failed to create Hubspot deal. Response: ' . wp_remote_retrieve_body( $response ) );
+               }
+          }
+     }
+
+}
+
+add_action( 'woocommerce_new_order', 'create_hubspot_deal_on_order_placed',100, 1 );
+
+
+function create_hubspot_deal_on_order_placed_payment_complete( $order_id ) {
+
+     // Some Environment based variable
+     if (ENVIRONMENT === 'STAGING' || ENVIRONMENT === 'DEVELOPMENT') {
+          $dealstage = 'deal_stage_staging';
+     } else {
+          $dealstage = 'dealstage';
+     }
+ 
+    
+     $order = wc_get_order($order_id);
+     $hubspot_deal_id = get_post_meta($order_id,'_hubspot_deal_id4',true);
+     $hubspot_deal_stage = get_hs_dealstage_code_by_order_status($order->get_status());
+     
+     // Send the PUT request to the Hubspot Deals API endpoint
+      $response = wp_remote_request( 'https://api.hubapi.com/crm/v3/objects/deals/'.$hubspot_deal_id,
+           array(
+                'method'  => 'PATCH',
+                'body' => '{
+                     "properties": {
+                         "'.$dealstage.'" : "'.$hubspot_deal_stage.'",
+                         "amount" : "'.$order->get_total() .'"
+                     }
+                }', 
+                'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+           )
+      );
+     //  $order->add_order_note( __("2. Order Status is: ".$order->get_status()."(".get_hs_dealstage_code_by_order_status($order->get_status()).")") );
+      // Check for errors
+      if ( is_wp_error( $response ) ) {
+           error_log( 'Failed to updated Hubspot deal stage. Error: ' . $response->get_error_message() );
+      } else {
+           error_log( 'Hubspot deal stage updated successfully. status.'.$order->get_status() );
+      }
+
+}
+
+// add_action( 'woocommerce_thankyou', 'create_hubspot_deal_on_order_placed', 1001, 2 );
+
+add_action( 'woocommerce_payment_complete', 'create_hubspot_deal_on_order_placed_payment_complete', 1000, 1);
+
+
+// add_action( 'woocommerce_payment_complete_order_status_completed', 'create_hubspot_deal_on_order_placed',1000,1 );
+
+function update_hubspot_deal_on_order_update( $order_id ) {
+     // get the order object
+	$order = wc_get_order( $order_id );
+
+
+     // Check if the order is a subscription renewal order or a subscription parent order
+     if ( get_post_type( $order_id ) == 'shop_subscription') {
+          return true;
+     }else{
+
+          $hubspot_deal_id1 = get_post_meta($order_id,'_hubspot_deal_id4',true);
+
+          if ($hubspot_deal_id1) {
+               $_hs_customer_id = get_post_meta($order_id,'_hs_customer_id4',true);
+
+               if( !$_hs_customer_id ){
+                    
+                    $user_info = get_userdata($order->get_user_id());
+                    if(!empty($user_info)){
+                         $contact_endpoint = 'https://api.hubapi.com/contacts/v1/contact/email/'.$user_info->user_email.'/profile';
+                         $contact_response = wp_remote_get( $contact_endpoint, array(
+                              'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                         ) );
+                              
+                         if ( is_wp_error( $contact_response ) ) {
+                              error_log( 'Failed to update Hubspot deal. Error: ' . $contact_response->get_error_message() );
+                         } else {		
+                              $contact_response_body = json_decode( wp_remote_retrieve_body( $contact_response ), true );
+                              
+                              // Send the PUT request to the Hubspot Deals API endpoint
+                              $response = wp_remote_request( 'https://api.hubapi.com/crm-associations/v1/associations',
+                                   array(
+                                        'method'  => 'PUT',
+                                        'body' => '{
+                                             "fromObjectId": '.$contact_response_body['vid'].',
+                                             "toObjectId": '.$hubspot_deal_id1.',
+                                             "category": "HUBSPOT_DEFINED",
+                                             "definitionId": 4
+                                        }', 
+                                        'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                                   )
+                              );
+                              // Check for errors
+                              if ( is_wp_error( $response ) ) {
+                                   error_log( 'Failed to updated Hubspot deal. Error: ' . $response->get_error_message() );
+                              } else {
+                                   update_post_meta( $order_id, '_hs_customer_id4', $contact_response_body['vid'] );
+                                   error_log( 'Hubspot deal updated successfully. Added customer_id.' );
+                              }
+                         }
+                    }
+               }
+
+               
+          
+               $_hubspot_line_item_added = get_post_meta($order_id,'_hubspot_line_item_added4',true);
+               if(!empty($order->get_items()) && !$_hubspot_line_item_added) {
+               
+                    foreach ( $order->get_items() as $item_id => $item_values ) {
+                         
+                         $hs_line_item = wc_get_order_item_meta( $item_id, '_hs_line_item4', true );
+                         if( !$hs_line_item ){
+                              // Product_id
+                              $product_id = $item_values->get_product_id(); 
+                              $item_quantity  = $item_values->get_quantity();
+                              $item_total     = $item_values->get_total();
+                              $product = wc_get_product( $product_id );
+
+                              //read first
+                              $product_get_endpoint = "https://api.hubapi.com/crm/v3/objects/products/batch/read?archived=false";
+                              // Set the deal properties
+                              $product_get_payload = array(
+                                   'properties' => array("productid",	"hs_sku"),
+                                   "idProperty" => "hs_sku",
+                                   "inputs" => array(
+                                        array(
+                                             "id" => $product->get_sku()
+                                        )
+                                   ),
+                              );
+                              // Send the POST request to the Hubspot Deals API endpoint
+                              $product_get_response = wp_remote_post( $product_get_endpoint, array(
+                                   'body' => json_encode( $product_get_payload ),
+                                   'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                              ) );
+
+                              if ( is_wp_error( $product_get_response ) ) {
+                                   error_log( 'Failed to read Hubspot product. Error: ' . $product_get_response->get_error_message() );
+                              } else {
+                                   $product_get_response_body = json_decode( wp_remote_retrieve_body( $product_get_response ), true );
+                                   if ( isset( $product_get_response_body['results'] ) && !empty( $product_get_response_body['results'] ) ) {	
+                                        
+                                        $hs_id = $product_get_response_body['results'][0]['id'];
+                                        $product_item_response = wp_remote_request( 'https://api.hubapi.com/crm/v3/objects/line_item',
+                                             array(
+                                                  'method'  => 'POST',
+                                                  'body' => '{
+                                                       "properties": {
+                                                       "hs_product_id" : '.$hs_id.',
+                                                       "quantity": '.$item_quantity.',
+                                                       "price": '.$item_total.'
+                                                       },
+                                                       "associations": [
+                                                       {
+                                                       "to": {
+                                                            "id": '.$hubspot_deal_id1.'
+                                                       },
+                                                       "types": [
+                                                            {
+                                                            "associationCategory": "HUBSPOT_DEFINED",
+                                                            "associationTypeId": 20
+                                                            }
+                                                       ]
+                                                       }
+                                                       ]
+                                                  }',
+                                                  'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+                                             )
+                                        );
+                                        if ( !is_wp_error( $product_get_response ) ) {
+                                             $product_item_response_body = json_decode( wp_remote_retrieve_body( $product_item_response ), true );
+                                             wc_update_order_item_meta($item_id, '_hs_line_item4', $product_item_response_body['id'] );
+                                             
+                                             update_post_meta($order_id,'_hubspot_line_item_added4',$product_item_response_body['id']);
+                                        }
+                                   }
+                              }
+                         }
+                    }
+               }
+          }else{
+               
+          }
+     }
+} 
+add_action( 'woocommerce_update_order', 'update_hubspot_deal_on_order_update' );
+
+add_action('woocommerce_order_status_changed', 'update_hubspot_deal_on_status_change', 1000, 3);
+function update_hubspot_deal_on_status_change($order_id, $old_status, $new_status) {
+
+
+ 
+
+     $order = wc_get_order($order_id);
+     $hubspot_deal_id = get_post_meta($order_id,'_hubspot_deal_id4',true);
+
+     if(in_array($old_status, ['bl', 'bl-pending', 'bl-sending','bl-shipped']) && $new_status == 'completed' ) {
+          $hubspot_deal_stage = get_hs_dealstage_code_by_order_status('bl-shipped');
+     } else {
+          $hubspot_deal_stage = get_hs_dealstage_code_by_order_status($new_status);
+     }
+
+     $order_date    = $order->get_date_modified();
+     $date          = date_create($order_date);
+     $newDate       = date_format($date,"Y/m/d H:i:s");
+     $hubspot_deal_stage_date = date_format($date,"Y-m-d");
+
+     // Some Environment based variable
+     if (ENVIRONMENT === 'STAGING' || ENVIRONMENT === 'DEVELOPMENT') {
+          $environmentSpecificData = array(
+               "properties" => array(
+                    "deal_stage_staging" => $hubspot_deal_stage,
+                    "amount" => $order->get_total()
+               )
+          );
+     } else {
+          $environmentSpecificData = array(
+               "properties" => array(
+                    "dealstage" => $hubspot_deal_stage,
+                    "deal_stage_date" => $hubspot_deal_stage_date,
+                    "amount" => $order->get_total()
+               )
+          );
+     }
+
+
+
+
+
+    // Send the PUT request to the Hubspot Deals API endpoint
+	$response = wp_remote_request( 'https://api.hubapi.com/crm/v3/objects/deals/'.$hubspot_deal_id,
+		array(
+			'method'  => 'PATCH',
+			'body' => json_encode($environmentSpecificData),
+			'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+		)
+	);
+
+
+
+	// Check for errors
+	if ( is_wp_error( $response ) ) {
+		error_log( 'Failed to updated Hubspot deal stage. Error: ' . $response->get_error_message() );
+	} else {
+		error_log( 'Hubspot deal stage updated successfully. status.'.$new_status );
+	}
+}
+
+ /**/
+add_action( 'woocommerce_new_product', 'update_product_to_hubspot', 10, 1 );
+add_action( 'woocommerce_update_product', 'update_product_to_hubspot', 10, 1 );
+function update_product_to_hubspot( $product_id ) {	
+	$product = wc_get_product( $product_id );
+	
+
+	$post = get_post( $product_id );
+     $author_id = $post->post_author;
+	$user_email = get_the_author_meta( 'user_email', $author_id);
+	
+	$shipping_price = get_post_meta( $product_id, 'shipping_price', true );
+
+	$product_tags = wp_get_post_terms( $product_id, 'product_tag', array( 'fields' => 'names' ) );
+	$product_tags_str = implode( '|', $product_tags );
+
+	$product_categories = wp_get_post_terms( $product_id, 'product_cat' );
+	$product_category_names = wp_list_pluck( $product_categories, 'name' );
+	$product_categories_str = implode( '>', $product_category_names );
+
+	$product_plan = wp_get_post_terms( $product_id, 'product-plan-type', array( 'fields' => 'names' ) );
+	$product_plan_str = implode( ' | ', $product_plan );
+
+	$product_brands = wp_get_post_terms( $product_id, 'product-brands', array( 'fields' => 'names' ) );
+	$product_brands_str = implode( ' | ', $product_brands );
+
+	//read first
+	$product_get_endpoint = "https://api.hubapi.com/crm/v3/objects/products/batch/read?archived=false";
+	// Set the deal properties
+	$product_get_payload = array(
+		'properties' => array("productid",	"hs_sku"),
+		"idProperty" => "hs_sku",
+		"inputs" => array(
+			array(
+				"id" => $product->get_sku()
+			)
+		),
+	);
+	// Send the POST request to the Hubspot Deals API endpoint
+	$product_get_response = wp_remote_post( $product_get_endpoint, array(
+		'body' => json_encode( $product_get_payload ),
+		'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+	) );
+
+	if ( is_wp_error( $product_get_response ) ) {
+		error_log( 'Failed to read Hubspot product. Error: ' . $product_get_response->get_error_message() );
+	} else {
+		$product_get_response_body = json_decode( wp_remote_retrieve_body( $product_get_response ), true );
+		if ( isset( $product_get_response_body['results'] ) && !empty( $product_get_response_body['results'] ) ) {
+			
+			$hs_id = $product_get_response_body['results'][0]['id'];
+
+			// Hubspot Deals API endpoint for creating new deals
+			//$sku = $product->get_sku();
+			//$product_endpoint = "https://api.hubapi.com/crm/v3/objects/products/$sku?idProperty=hs_sku";
+			$product_endpoint = "https://api.hubapi.com/crm/v3/objects/products/$hs_id";
+
+			// Set the deal properties
+			$product_properties = array(
+				"productid" => $product_id,
+				"price" => $product->get_price(),
+				"name" => $product->get_title(),
+				"hs_sku" => $product->get_sku(),
+				"description" => $product->get_description(),
+				"hs_url" => get_permalink( $product->get_id() ),
+				"hs_product_type" => $product->get_type(),
+				"hs_images" => wp_get_attachment_url( $product->get_image_id() ),
+				"author_email" => $user_email,
+				"plan_type" => $product_plan_str,
+				"product_brands" => $product_brands_str,
+				"product_categories" => $product_categories_str,
+				"product_tags" => $product_tags_str,
+				"slug" => $product->get_slug(),
+				"shipping_price" => $shipping_price
+			);
+			
+			// Create the deal payload
+			$product_payload = array(
+				'properties' => $product_properties,
+			);
+
+
+			// Send the POST request to the Hubspot Deals API endpoint
+			$response = wp_remote_request( $product_endpoint,
+				array(
+					'method'  => 'PATCH',
+					'body' => json_encode( $product_payload ),
+					'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+				)	
+			);
+
+			// Check for errors
+			if ( is_wp_error( $response ) ) {
+				error_log( 'Failed to updated Hubspot product. Error: ' . $response->get_error_message() );
+			} else {
+				$response_body = json_decode( wp_remote_retrieve_body( $response ), true );
+				
+				if ( isset( $response_body['id'] ) ) {
+					update_post_meta( $product_id, '_hubspot_product_id4', $response_body['id'] );
+				} else {
+					error_log( 'Failed to updated Hubspot product. Response: ' . wp_remote_retrieve_body( $response ) );
+				}
+			}
+			
+		} else {
+			// Hubspot Deals API endpoint for creating new deals
+			$product_endpoint = 'https://api.hubapi.com/crm/v3/objects/products';
+
+			// Set the deal properties
+			$product_properties = array(
+				"productid" => $product_id,
+				"price" => $product->get_price(),
+				"name" => $product->get_title(),
+				"hs_sku" => $product->get_sku(),
+				"description" => $product->get_description(),
+				"hs_url" => get_permalink( $product->get_id() ),
+				"hs_product_type" => $product->get_type(),
+				"hs_images" => wp_get_attachment_url( $product->get_image_id() ),
+				"author_email" => $user_email,
+				"plan_type" => $product_plan_str,
+				"product_brands" => $product_brands_str,
+				"product_categories" => $product_categories_str,
+				"product_tags" => $product_tags_str,
+				"slug" => $product->get_slug(),
+				"shipping_price" => $shipping_price
+			);
+			
+			// Create the deal payload
+			$product_payload = array(
+				'properties' => $product_properties,
+			);
+
+
+			// Send the POST request to the Hubspot Deals API endpoint
+			$response = wp_remote_post( $product_endpoint, array(
+				'body' => json_encode( $product_payload ),
+				'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+			) );
+
+			// Check for errors
+			if ( is_wp_error( $response ) ) {
+				error_log( 'Failed to create Hubspot product. Error: ' . $response->get_error_message() );
+			} else {
+				$response_body = json_decode( wp_remote_retrieve_body( $response ), true );
+				if ( isset( $response_body['id'] ) ) {
+					update_post_meta( $product_id, '_hubspot_product_id4', $response_body['id'] );
+				} else {
+					error_log( 'Failed to create Hubspot product. Response: ' . wp_remote_retrieve_body( $response ) );
+				}
+			}
+		}
+	}	
+}
+
+add_action( 'wp_trash_post', 'delete_product_from_hubspot', 99, 2 );
+add_action( 'before_delete_post', 'delete_product_from_hubspot', 99, 2 );
+function delete_product_from_hubspot( $product_id ) {
+	if ( 'product' !== get_post_type( $product_id ) ) {
+		return;
+	}
+
+	$product = wc_get_product( $product_id );
+	
+	$product_endpoint = "https://api.hubapi.com/crm/v3/objects/products/batch/read?archived=false";
+	// Set the deal properties
+	$product_payload = array(
+		'properties' => array("productid",	"hs_sku"),
+		"idProperty" => "hs_sku",
+		"inputs" => array(
+			array(
+				"id" => $product->get_sku()
+			)
+		),
+	);
+	// Send the POST request to the Hubspot Deals API endpoint
+	$response = wp_remote_post( $product_endpoint, array(
+		'body' => json_encode( $product_payload ),
+		'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+	) );
+
+	// Check for errors
+	if ( is_wp_error( $response ) ) {
+		error_log( 'Failed to read Hubspot product. Error: ' . $response->get_error_message() );
+	} else {
+		$response_body = json_decode( wp_remote_retrieve_body( $response ), true );
+		if ( isset( $response_body['results'] ) && !empty( $response_body['results'] ) ) {
+			$hs_id = $response_body['results'][0]['id'];
+			wp_remote_request( "https://api.hubapi.com/crm/v3/objects/products/{$hs_id}",
+				array(
+					'method'  => 'DELETE',
+					'headers' => array( 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.HUBSPOT_BEARER ),
+				)	
+			);
+			error_log( 'deleted' );
+		} else {
+			error_log( 'Failed to create read product. Response: ' . wp_remote_retrieve_body( $response ) );
+		}
+	}
+}
+
+/**
+ * [URGENT] Integration between WC and HubSpot deals for Sales Data
+ * 
+ * End
+ */
+?>
