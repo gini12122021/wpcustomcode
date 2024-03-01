@@ -1,0 +1,70 @@
+<?php 
+
+//register custom post_type
+function register_cpt_result() {
+
+	$labels = array(
+		'name' => __( 'Artwork', 'Artwork' ),
+		'singular_name' => __( 'Artwork', 'Artwork' ),
+		'add_new' => __( 'Add New', 'Artwork' ),
+		'add_new_item' => __( 'Add New Artwork', 'Artwork' ),
+		'edit_item' => __( 'Edit Artwork', 'Artwork' ),
+		'new_item' => __( 'New Artwork', 'Artwork' ),
+		'view_item' => __( 'View Artwork', 'Artwork' ),
+		'search_items' => __( 'Search Artworks', 'Artwork' ),
+		'not_found' => __( 'No Artworks found', 'Artwork' ),
+		'not_found_in_trash' => __( 'No Artworks found in Trash', 'Artwork' ),
+		'parent_item_colon' => __( 'Parent Artwork:', 'Artwork' ),
+		'menu_name' => __( 'Artworks', 'Artwork' ),
+	);
+
+	$args = array(
+		'labels' => $labels,
+		'hierarchical' => false,
+		'supports' =>  array( 'title', 'editor', 'excerpt', 'author', 'thumbnail', 'comments', 'revisions', 'custom-fields', ),
+		'public' => true,
+		'show_ui' => true,
+		'show_in_menu' => true,
+		'menu_position' => 5,
+		'show_in_nav_menus' => true,
+		'publicly_queryable' => true,
+		'exclude_from_search' => false,
+		'has_archive' => true,
+		'query_var' => true,
+		'can_export' => true,
+		'rewrite' => true,
+		'capability_type' => 'post'
+	);
+
+	register_post_type( 'Artwork', $args );
+}
+add_action( 'init', 'register_cpt_result' );
+
+
+//register taxonomy
+function create_topics_hierarchical_taxonomy() {
+  $labels = array(
+    'name' => _x( 'Topics', 'taxonomy general name' ),
+    'singular_name' => _x( 'Topic', 'taxonomy singular name' ),
+    'search_items' =>  __( 'Search Topics' ),
+    'all_items' => __( 'All Topics' ),
+    'parent_item' => __( 'Parent Topic' ),
+    'parent_item_colon' => __( 'Parent Topic:' ),
+    'edit_item' => __( 'Edit Topic' ), 
+    'update_item' => __( 'Update Topic' ),
+    'add_new_item' => __( 'Add New Topic' ),
+    'new_item_name' => __( 'New Topic Name' ),
+    'menu_name' => __( 'Topics' ),
+  );
+  register_taxonomy('topics',array('post'), array(
+    'hierarchical' => true,
+    'labels' => $labels,
+    'show_ui' => true,
+    'show_admin_column' => true,
+    'query_var' => true,
+    'rewrite' => array( 'slug' => 'topic' ),
+  ));
+}
+add_action( 'init', 'create_topics_hierarchical_taxonomy', 0 );
+
+?>
