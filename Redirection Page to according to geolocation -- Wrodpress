@@ -1,0 +1,103 @@
+<?php 
+function get_client_ip() {
+    $ipaddress = '';
+    if (getenv('HTTP_CLIENT_IP'))
+        $ipaddress = getenv('HTTP_CLIENT_IP');
+    else if(getenv('HTTP_X_FORWARDED_FOR'))
+        $ipaddress = getenv('HTTP_X_FORWARDED_FOR');
+    else if(getenv('HTTP_X_FORWARDED'))
+        $ipaddress = getenv('HTTP_X_FORWARDED');
+    else if(getenv('HTTP_FORWARDED_FOR'))
+        $ipaddress = getenv('HTTP_FORWARDED_FOR');
+    else if(getenv('HTTP_FORWARDED'))
+       $ipaddress = getenv('HTTP_FORWARDED');
+    else if(getenv('REMOTE_ADDR'))
+        $ipaddress = getenv('REMOTE_ADDR');
+    else
+        $ipaddress = 'UNKNOWN';
+    return $ipaddress;
+}
+
+function redirect_page_for_us_visitors() {
+    $api_key = 'c432903cd7ee4b';
+    $user_ip = get_client_ip();
+	//$my_ip =  '104.104.51.255';
+    $api_url = "http://ipinfo.io/{$user_ip}?token={$api_key}";
+	$page_id= '9222';
+	$curl = curl_init();
+    curl_setopt_array($curl, array(
+    CURLOPT_URL => $api_url ,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_ENCODING => '',
+    CURLOPT_MAXREDIRS => 10,
+    CURLOPT_TIMEOUT => 0,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+    CURLOPT_CUSTOMREQUEST => 'GET',
+));
+$response = curl_exec($curl);
+curl_close($curl);
+$data=json_decode($response);
+
+
+if (isset($data->country)) {
+    if ($data->country === 'SG' || $data->country === 'AU' || $data->country === 'NZ') {
+        if (is_page($page_id)) {
+            global $wp_query;
+            $wp_query->set_404();
+            status_header(404);
+            get_template_part(404);
+            exit();
+        }
+    } elseif ($data->country === 'IN') {
+        if (is_page($page_id)) {
+            header('Location: https://eaxmple.com/watch-fbr/hn', true, 301);
+            exit();
+        }
+    }
+    elseif ($data->country === 'AR'|| $data->country === 'BO'|| $data->country === 'CL'|| $data->country === 'CO'|| $data->country === 'EC'|| $data->country === 'PY'|| $data->country === 'PE'
+    || $data->country === 'UY'|| $data->country === 'VE'|| $data->country === 'CR'|| $data->country === 'SV'|| $data->country === 'GT'|| $data->country === 'HN'|| $data->country === 'NI') {
+        if (is_page($page_id)) {
+           wp_redirect('https://eaxmple.com/watch-fbr/es');
+            exit();
+        }
+    }
+    elseif ($data->country === 'BR') {
+        if (is_page($page_id)) {
+           wp_redirect('https://eaxmple.com/watch-fbr/pt-br');
+            exit();
+        }
+    }
+    elseif ($data->country === 'UA' ) {
+        if (is_page($page_id)) {
+           wp_redirect('https://eaxmple.com/watch-fbr/ua');
+            exit();
+        }
+    }
+    elseif ($data->country === 'RU' ) {
+        if (is_page($page_id)) {
+           wp_redirect('https://eaxmple.com/watch-fbr/ru');
+            exit();
+        }
+    }
+    elseif ($data->country === 'EG'|| $data->country === 'TR'|| $data->country === 'IR'|| $data->country === 'IQ'|| $data->country === 'SA'|| $data->country === 'YE'|| $data->country === 'SY'
+    || $data->country === 'JO'|| $data->country === 'AE'|| $data->country === 'IL'|| $data->country === 'LB'|| $data->country === 'PS'|| $data->country === 'OM'|| $data->country === 'KW'|| $data->country === 'QA'|| $data->country === 'BH') {
+        if (is_page($page_id)) {
+           wp_redirect('https://eaxmple.com/watch-fbr/ar');
+            exit();
+        }
+    }
+    elseif ($data->country === 'MM' || $data->country === 'TH') {
+        if (is_page($page_id)) {
+           wp_redirect('https://eaxmple.com/watch-fbr/my');
+            exit();
+        }
+    }
+}
+
+}
+add_action('wp', 'redirect_page_for_us_visitors');
+
+
+
+?>
