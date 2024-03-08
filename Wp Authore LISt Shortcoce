@@ -1,0 +1,24 @@
+<?php 
+
+function print_my_authors_in_list($atts){
+	$args = array(
+		'orderby'       => isset($atts['orderby']) ? $atts['orderby'] : 'name',
+		'order'         => isset($atts['order']) ? $atts['order'] : 'ASC',
+		'number'        => isset($atts['number']) ? $atts['number'] : '',
+		'optioncount'   => isset($atts['optioncount']) ? $atts['optioncount'] : false,
+		'exclude_admin' => isset($atts['exclude-admin']) ? $atts['exclude-admin'] : true,
+		'show_fullname' => isset($atts['show-fullname']) ? $atts['show-fullname'] : false,
+		'hide_empty'    => isset($atts['hide-empty']) ? $atts['hide-empty'] : true,
+		'echo'          => false,
+		'style'         => isset($atts['style']) ? $atts['style'] : 'list',
+		'html'          => isset($atts['html']) ? $atts['html'] : true,
+		'exclude'       => isset($atts['exclude']) ? $atts['exclude'] : '',
+		'include'       => isset($atts['include']) ? $atts['include'] : '',
+	);
+
+	return wp_list_authors($args);
+}
+
+add_shortcode("print-my-authors-list","print_my_authors_in_list");
+
+?>
