@@ -1,0 +1,39 @@
+
+add_filter('admin_init', 'seoeditiorsimplebannerpremission');
+
+function seoeditiorsimplebannerpremission()
+{
+
+
+	// Check if the current user has a specific role or capability
+	if (current_user_can('sco-editor')) {
+		$manage_simple_banner = 'manage_simple_banner';
+		$manage_options = 'manage_options';
+		$role_name = 'sco-editor';
+		$add_role = get_role($role_name);
+		$add_role->add_cap($manage_simple_banner);
+		$add_role->add_cap($manage_options);
+	}
+}
+
+
+
+
+add_action('admin_menu', 'hide_elementor_menu_page', 999);
+
+function hide_elementor_menu_page()
+{
+	// Check if the current user has the specific role you want to target
+	if (current_user_can('sco-editor')) { // Change 'administrator' to the role you want to target
+		// Remove the menu items you want to hide
+		remove_menu_page('wp-mail-catcher');
+		remove_menu_page('contact-form-cfdb7');
+		remove_menu_page('elementor');
+		remove_menu_page('elementor');
+		remove_menu_page('elementor');
+		remove_menu_page('elementor');
+		remove_menu_page('elementor');
+		remove_menu_page('elementor');
+		remove_menu_page('elementor');
+	}
+}
